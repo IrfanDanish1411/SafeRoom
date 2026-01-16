@@ -31,16 +31,18 @@
 // ==================== SENSOR SETTINGS ====================
 #define DHT_TYPE        DHT11
 #define FIRE_TEMP_THRESHOLD  50.0   // Celsius - trigger fire alert above this
-#define SERVO_LOCKED    0           // Servo angle for locked door
-#define SERVO_UNLOCKED  90          // Servo angle for unlocked door
+
+// Standard SG90 Servo Settings (positional - NOT continuous)
+// Moves to angle and STAYS there
+#define SERVO_LOCKED    0     // Locked position (0 degrees)
+#define SERVO_UNLOCKED  90    // Unlocked position (90 degrees)
+#define SERVO_MOVE_TIME 500   // Time to wait for movement (ms)
 
 // ==================== WIFI CONFIGURATION ====================
-// TODO: Update with your WiFi credentials
 const char* WIFI_SSID = "cslab";
 const char* WIFI_PASSWORD = "aksesg31";
 
 // ==================== MQTT CONFIGURATION ====================
-// TODO: Update with your GCP VM's external IP
 const char* MQTT_SERVER = "35.193.224.18";
 const int MQTT_PORT = 1883;
 const char* MQTT_CLIENT_ID = "esp32_room_safety";
@@ -101,10 +103,13 @@ void setup() {
   delay(2000);  // DHT11 needs 2 seconds to warm up!
   Serial.println("[OK] DHT11 sensor initialized (warm-up complete)");
 
-  // Initialize Servo
+  // Initialize Servo at unlocked position
   doorServo.attach(SERVO_PIN);
-  unlockDoor();  // Start with door unlocked
-  Serial.println("[OK] Servo motor initialized");
+  doorServo.write(SERVO_UNLOCKED);  // Start unlocked (90°)
+  delay(500);
+  doorServo.detach();  // Detach to prevent jitter
+  doorLocked = false;
+  Serial.println("[OK] Servo initialized at UNLOCKED position (90°)");
 
   // Set initial LED state (green = safe)
   setLEDs(false);
@@ -216,14 +221,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       publishStatus();
     }
   } else if (strcmp(action, "reset") == 0) {
-    // Reset room status and alerts
+    // Reset everything to default state
     occupantCount = 0;
     burglarDetected = false;
     fireDetected = false;
-    unlockDoor();
-    setLEDs(false);
+    
+    // Move servo to unlocked position
+    doorServo.attach(SERVO_PIN);
+    doorServo.write(SERVO_UNLOCKED);  // Move to 90°
+    delay(SERVO_MOVE_TIME);
+    doorServo.detach();  // Detach to prevent jitter
+    doorLocked = false;
+    
+    // Reset LED to green
+    digitalWrite(RED_LED_PIN, LOW);
+    digitalWrite(GREEN_LED_PIN, HIGH);
+    
     publishStatus();
-    Serial.println("[RESET] System reset via command");
+    Serial.println("[RESET] System reset - Door unlocked (90°), LED:Green, Alerts:Cleared");
   } else if (strcmp(action, "checkout") == 0) {
     // One person left the room
     if (occupantCount > 0) {
@@ -286,6 +301,7 @@ void checkSafetyLogic(float temperature) {
     unlockDoor();  // ALWAYS unlock for fire escape
     setLEDs(true); // Red LED on
     publishAlert("fire", "High temperature detected! Door unlocked for evacuation.");
+    publishStatus();
   } 
   // Reset fire alert when temperature drops
   else if (temperature < (FIRE_TEMP_THRESHOLD - 5) && fireDetected) {
@@ -304,6 +320,7 @@ void checkSafetyLogic(float temperature) {
       lockDoor();   // Lock the intruder in
       setLEDs(true); // Red LED on
       publishAlert("burglar", "Motion detected with no authorized entry! Door locked.");
+      publishStatus();
     }
   }
 
@@ -315,15 +332,21 @@ void checkSafetyLogic(float temperature) {
 
 // ==================== DOOR CONTROL ====================
 void lockDoor() {
-  doorServo.write(SERVO_LOCKED);
+  doorServo.attach(SERVO_PIN);
+  doorServo.write(SERVO_LOCKED);   // Move to 0°
+  delay(SERVO_MOVE_TIME);
+  doorServo.detach();              // Detach to prevent jitter
   doorLocked = true;
-  Serial.println("[Door] LOCKED 🔒");
+  Serial.println("[Door] LOCKED 🔒 (0°)");
 }
 
 void unlockDoor() {
-  doorServo.write(SERVO_UNLOCKED);
+  doorServo.attach(SERVO_PIN);
+  doorServo.write(SERVO_UNLOCKED); // Move to 90°
+  delay(SERVO_MOVE_TIME);
+  doorServo.detach();              // Detach to prevent jitter
   doorLocked = false;
-  Serial.println("[Door] UNLOCKED 🔓");
+  Serial.println("[Door] UNLOCKED 🔓 (90°)");
 }
 
 // ==================== LED CONTROL ====================

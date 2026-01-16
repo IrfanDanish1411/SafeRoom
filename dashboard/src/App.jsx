@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import mqtt from 'mqtt';
-import HistoryPanel from './components/HistoryPanel';
+import './index.css';
 
-// ==================== MQTT CONFIGURATION ====================
-// TODO: Update with your GCP VM's external IP address
+// ==================== CONFIGURATION ====================
 const MQTT_BROKER_URL = 'ws://35.193.224.18:9001/mqtt';
+const API_BASE = 'http://35.193.224.18:5000/api';
 
-// MQTT Topics
 const TOPICS = {
     SENSORS: 'room/sensors',
     STATUS: 'room/status',
@@ -20,7 +19,7 @@ function App() {
     const [client, setClient] = useState(null);
 
     // Sensor data
-    const [sensorData, setSensorData] = useState({
+    const [sensors, setSensors] = useState({
         temp: 0,
         humidity: 0,
         ir: 0,
@@ -28,7 +27,7 @@ function App() {
         occupant_count: 0,
     });
 
-    // Status data
+    // Status
     const [status, setStatus] = useState({
         door: 'unlocked',
         led: 'green',
@@ -39,291 +38,332 @@ function App() {
     // Alerts
     const [alerts, setAlerts] = useState([]);
 
-    // ==================== MQTT CONNECTION ====================
+    // History data
+    const [history, setHistory] = useState([]);
+    const [stats, setStats] = useState(null);
+
+    // Connect to MQTT
     useEffect(() => {
-        const mqttClient = mqtt.connect(MQTT_BROKER_URL, {
-            clientId: `dashboard_${Math.random().toString(16).slice(2, 8)}`,
-            reconnectPeriod: 5000,
-        });
+        const mqttClient = mqtt.connect(MQTT_BROKER_URL);
 
         mqttClient.on('connect', () => {
-            console.log('✅ Connected to MQTT broker');
             setConnected(true);
-
-            // Subscribe to topics
-            Object.values(TOPICS).forEach((topic) => {
-                if (topic !== TOPICS.COMMAND) {
-                    mqttClient.subscribe(topic, (err) => {
-                        if (!err) console.log(`📡 Subscribed to ${topic}`);
-                    });
-                }
-            });
-        });
-
-        mqttClient.on('disconnect', () => {
-            console.log('❌ Disconnected from MQTT broker');
-            setConnected(false);
-        });
-
-        mqttClient.on('error', (err) => {
-            console.error('MQTT Error:', err);
-            setConnected(false);
+            mqttClient.subscribe(Object.values(TOPICS).slice(0, 3));
         });
 
         mqttClient.on('message', (topic, message) => {
             try {
                 const data = JSON.parse(message.toString());
-                console.log(`📨 ${topic}:`, data);
 
-                switch (topic) {
-                    case TOPICS.SENSORS:
-                        setSensorData(data);
-                        break;
-                    case TOPICS.STATUS:
-                        setStatus(data);
-                        break;
-                    case TOPICS.ALERT:
-                        setAlerts((prev) => [
-                            {
-                                ...data,
-                                id: Date.now(),
-                                receivedAt: new Date().toLocaleTimeString(),
-                            },
-                            ...prev.slice(0, 9), // Keep last 10 alerts
-                        ]);
-                        break;
+                if (topic === TOPICS.SENSORS) {
+                    setSensors(data);
+                } else if (topic === TOPICS.STATUS) {
+                    setStatus(data);
+                } else if (topic === TOPICS.ALERT) {
+                    setAlerts(prev => [{
+                        ...data,
+                        id: Date.now(),
+                        time: new Date().toLocaleTimeString(),
+                    }, ...prev.slice(0, 9)]);
                 }
-            } catch (err) {
-                console.error('Failed to parse message:', err);
+            } catch (e) {
+                console.error('Parse error:', e);
             }
         });
 
-        setClient(mqttClient);
+        mqttClient.on('close', () => setConnected(false));
+        mqttClient.on('error', () => setConnected(false));
 
-        return () => {
-            mqttClient.end();
-        };
+        setClient(mqttClient);
+        return () => mqttClient.end();
     }, []);
 
-    // ==================== SEND COMMANDS ====================
-    const sendCommand = useCallback(
-        (action) => {
-            if (client && connected) {
-                const command = JSON.stringify({ action });
-                client.publish(TOPICS.COMMAND, command);
-                console.log(`📤 Sent command: ${action}`);
+    // Fetch history/stats
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const [sensorsRes, statsRes] = await Promise.all([
+                    fetch(`${API_BASE}/sensors?hours=24&limit=20`),
+                    fetch(`${API_BASE}/stats?hours=24`)
+                ]);
+                if (sensorsRes.ok) setHistory(await sensorsRes.json());
+                if (statsRes.ok) setStats(await statsRes.json());
+            } catch (e) {
+                console.log('API not available');
             }
-        },
-        [client, connected]
-    );
+        };
+        fetchData();
+        const interval = setInterval(fetchData, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
-    // ==================== RENDER ====================
+    // Send command
+    const sendCommand = useCallback((action) => {
+        if (client && connected) {
+            client.publish(TOPICS.COMMAND, JSON.stringify({ action }));
+        }
+    }, [client, connected]);
+
+    // Determine current mode
+    const currentMode = status.mode || 'normal';
+    const isAlert = currentMode !== 'normal';
+    const occupants = status.occupant_count || sensors.occupant_count || 0;
+
     return (
-        <div className="app">
+        <div className={`app ${isAlert ? 'alert-mode' : ''}`}>
             {/* Header */}
             <header className="header">
-                <h1>🏠 Room Safety Dashboard</h1>
-                <p className="subtitle">Real-time monitoring and control</p>
-                <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
-                    <span className="status-dot"></span>
-                    {connected ? 'Connected to ESP32' : 'Disconnected'}
+                <div className="header-content">
+                    <h1>🏠 Room Safety Monitor</h1>
+                    <div className={`connection-badge ${connected ? 'online' : 'offline'}`}>
+                        <span className="pulse-dot"></span>
+                        {connected ? 'Live' : 'Disconnected'}
+                    </div>
                 </div>
             </header>
 
-            {/* Dashboard Grid */}
-            <div className="dashboard">
-                {/* Temperature Card */}
-                <div className="card temp-card">
-                    <div className="card-header">
-                        <div className="card-icon">🌡️</div>
-                        <span className="card-title">Temperature</span>
-                    </div>
-                    <div className="sensor-value">
-                        {sensorData.temp.toFixed(1)}
-                        <span className="sensor-unit">°C</span>
-                    </div>
-                    <div className="sensor-label">
-                        {sensorData.temp >= 50 ? '🔥 FIRE WARNING!' : 'Normal range'}
-                    </div>
-                </div>
-
-                {/* Humidity Card */}
-                <div className="card humidity-card">
-                    <div className="card-header">
-                        <div className="card-icon">💧</div>
-                        <span className="card-title">Humidity</span>
-                    </div>
-                    <div className="sensor-value">
-                        {sensorData.humidity.toFixed(1)}
-                        <span className="sensor-unit">%</span>
-                    </div>
-                    <div className="sensor-label">Relative humidity</div>
-                </div>
-
-                {/* Room Status Card */}
-                <div className="card entry-card">
-                    <div className="card-header">
-                        <div className="card-icon">🏠</div>
-                        <span className="card-title">Room Occupancy</span>
-                    </div>
-                    <div className="sensor-value">
-                        {status.occupant_count || sensorData.occupant_count || 0}
-                    </div>
-                    <div className="sensor-label">
-                        {(status.occupant_count || sensorData.occupant_count) > 0
-                            ? `👥 ${status.occupant_count || sensorData.occupant_count} person(s) in room`
-                            : '🚫 Room is empty'}
-                    </div>
-                    <button
-                        className="btn btn-checkout"
-                        onClick={() => sendCommand('checkout')}
-                        disabled={!connected || (status.occupant_count || sensorData.occupant_count || 0) === 0}
-                        style={{ marginTop: '16px', width: '100%' }}
-                    >
-                        🚪 Checkout (-1 Person)
+            {/* Alert Banner */}
+            {isAlert && (
+                <div className={`alert-banner ${currentMode}`}>
+                    <span className="alert-icon">{currentMode === 'fire' ? '🔥' : '🚨'}</span>
+                    <span className="alert-text">
+                        {currentMode === 'fire'
+                            ? 'FIRE DETECTED - Door unlocked for evacuation!'
+                            : 'BURGLAR DETECTED - Door locked!'}
+                    </span>
+                    <button className="alert-dismiss" onClick={() => sendCommand('reset')}>
+                        Reset Alert
                     </button>
                 </div>
+            )}
 
-                {/* Motion Detection Card */}
-                <div className="card">
-                    <div className="card-header">
-                        <div className="card-icon" style={{ background: 'linear-gradient(135deg, #10b981, #34d399)' }}>
-                            📡
+            <main className="main-content">
+                {/* Left Column - Controls */}
+                <section className="control-panel">
+                    {/* Door Control */}
+                    <div className="panel door-panel">
+                        <div className="panel-header">
+                            <h2>🚪 Door Control</h2>
                         </div>
-                        <span className="card-title">Motion Detection</span>
-                    </div>
-                    <div className="motion-grid">
-                        <div className={`motion-item ${sensorData.ir ? 'active' : 'inactive'}`}>
-                            <div className="motion-icon">🚪</div>
-                            <div className="motion-label">IR Sensor</div>
-                            <div className={`motion-status ${sensorData.ir ? 'active' : 'inactive'}`}>
-                                {sensorData.ir ? 'TRIGGERED' : 'Clear'}
+                        <div className="door-visual">
+                            <div className={`door-icon ${status.door}`}>
+                                {status.door === 'locked' ? '🔒' : '🔓'}
                             </div>
+                            <span className={`door-status ${status.door}`}>
+                                {status.door?.toUpperCase()}
+                            </span>
                         </div>
-                        <div className={`motion-item ${sensorData.pir ? 'active' : 'inactive'}`}>
-                            <div className="motion-icon">🏃</div>
-                            <div className="motion-label">PIR Sensor</div>
-                            <div className={`motion-status ${sensorData.pir ? 'active' : 'inactive'}`}>
-                                {sensorData.pir ? 'MOTION' : 'No motion'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* System Status Card */}
-                <div className="card status-card">
-                    <div className="card-header">
-                        <div className="card-icon" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-                            📊
-                        </div>
-                        <span className="card-title">System Status</span>
-                    </div>
-                    <div className="status-grid">
-                        <div className="status-item">
-                            <div className="status-item-label">Mode</div>
-                            <div
-                                className={`status-item-value ${status.mode === 'normal' ? 'safe' : 'danger'
-                                    }`}
-                            >
-                                {status.mode.toUpperCase()}
-                            </div>
-                        </div>
-                        <div className="status-item">
-                            <div className="status-item-label">LED Status</div>
-                            <div
-                                className={`status-item-value ${status.led === 'green' ? 'safe' : 'danger'
-                                    }`}
-                            >
-                                {status.led === 'green' ? '🟢 GREEN' : '🔴 RED'}
-                            </div>
-                        </div>
-                        <div className="status-item">
-                            <div className="status-item-label">Door</div>
-                            <div
-                                className={`status-item-value ${status.door === 'unlocked' ? 'safe' : 'danger'
-                                    }`}
-                            >
-                                {status.door === 'unlocked' ? '🔓 UNLOCKED' : '🔒 LOCKED'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Door Control Card */}
-                <div className="card">
-                    <div className="card-header">
-                        <div className="card-icon" style={{ background: 'linear-gradient(135deg, #f59e0b, #fbbf24)' }}>
-                            🚪
-                        </div>
-                        <span className="card-title">Door Control</span>
-                    </div>
-                    <div className="door-control">
-                        <div className="door-status">
-                            {status.door === 'locked' ? '🔒' : '🔓'}
-                        </div>
-                        <div className={`door-label ${status.door}`}>
-                            {status.door.toUpperCase()}
-                        </div>
-                        <div className="door-buttons">
+                        <div className="door-actions">
                             <button
                                 className="btn btn-lock"
                                 onClick={() => sendCommand('lock')}
-                                disabled={!connected || status.door === 'locked'}
+                                disabled={!connected}
                             >
                                 🔒 Lock
                             </button>
                             <button
                                 className="btn btn-unlock"
                                 onClick={() => sendCommand('unlock')}
-                                disabled={!connected || status.door === 'unlocked'}
+                                disabled={!connected}
                             >
                                 🔓 Unlock
                             </button>
-                            <button
-                                className="btn btn-reset"
-                                onClick={() => sendCommand('reset')}
-                                disabled={!connected}
-                            >
-                                🔄 Reset
-                            </button>
                         </div>
+                        <button
+                            className="btn btn-reset full-width"
+                            onClick={() => sendCommand('reset')}
+                            disabled={!connected}
+                        >
+                            🔄 Reset System
+                        </button>
                     </div>
-                </div>
 
-                {/* Alerts Card */}
-                <div className="card alert-card">
-                    <div className="card-header">
-                        <div className="card-icon" style={{ background: 'linear-gradient(135deg, #ef4444, #f87171)' }}>
-                            ⚠️
+                    {/* Room Occupancy */}
+                    <div className="panel occupancy-panel">
+                        <div className="panel-header">
+                            <h2>👥 Room Occupancy</h2>
                         </div>
-                        <span className="card-title">Security Alerts</span>
+                        <div className="occupancy-display">
+                            <span className="occupancy-count">{occupants}</span>
+                            <span className="occupancy-label">
+                                {occupants === 0 ? 'Empty' : occupants === 1 ? 'Person' : 'People'}
+                            </span>
+                        </div>
+                        <button
+                            className="btn btn-checkout full-width"
+                            onClick={() => sendCommand('checkout')}
+                            disabled={!connected || occupants === 0}
+                        >
+                            🚪 Checkout (-1)
+                        </button>
                     </div>
-                    <div className="alert-list">
-                        {alerts.length === 0 ? (
-                            <div className="no-alerts">
-                                <div className="no-alerts-icon">✅</div>
-                                <p>No alerts - System is secure</p>
-                            </div>
-                        ) : (
-                            alerts.map((alert) => (
-                                <div key={alert.id} className={`alert-item ${alert.type}`}>
-                                    <div className="alert-icon">
-                                        {alert.type === 'fire' ? '🔥' : '🚨'}
-                                    </div>
-                                    <div className="alert-content">
-                                        <div className="alert-type">{alert.type} Alert</div>
-                                        <div className="alert-message">{alert.message}</div>
-                                        <div className="alert-time">{alert.receivedAt}</div>
-                                    </div>
+                </section>
+
+                {/* Center Column - Sensors */}
+                <section className="sensor-panel">
+                    <div className="panel">
+                        <div className="panel-header">
+                            <h2>📊 Live Sensors</h2>
+                        </div>
+                        <div className="sensor-grid">
+                            {/* Temperature */}
+                            <div className="sensor-card temp">
+                                <div className="sensor-icon">🌡️</div>
+                                <div className="sensor-info">
+                                    <span className="sensor-value">
+                                        {sensors.temp?.toFixed(1) || 0}
+                                        <small>°C</small>
+                                    </span>
+                                    <span className="sensor-label">Temperature</span>
                                 </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </div>
+                                <div className={`sensor-status ${sensors.temp >= 50 ? 'danger' : 'normal'}`}>
+                                    {sensors.temp >= 50 ? '⚠️ HIGH' : 'Normal'}
+                                </div>
+                            </div>
 
-            {/* History Panel */}
-            <HistoryPanel />
+                            {/* Humidity */}
+                            <div className="sensor-card humidity">
+                                <div className="sensor-icon">💧</div>
+                                <div className="sensor-info">
+                                    <span className="sensor-value">
+                                        {sensors.humidity?.toFixed(0) || 0}
+                                        <small>%</small>
+                                    </span>
+                                    <span className="sensor-label">Humidity</span>
+                                </div>
+                            </div>
+
+                            {/* IR Sensor */}
+                            <div className={`sensor-card ir ${sensors.ir ? 'active' : ''}`}>
+                                <div className="sensor-icon">📡</div>
+                                <div className="sensor-info">
+                                    <span className="sensor-value">{sensors.ir ? 'TRIGGERED' : 'Clear'}</span>
+                                    <span className="sensor-label">IR Entry</span>
+                                </div>
+                            </div>
+
+                            {/* PIR Sensor */}
+                            <div className={`sensor-card pir ${sensors.pir ? 'active' : ''}`}>
+                                <div className="sensor-icon">🏃</div>
+                                <div className="sensor-info">
+                                    <span className="sensor-value">{sensors.pir ? 'MOTION' : 'No Motion'}</span>
+                                    <span className="sensor-label">PIR Motion</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Status Indicators */}
+                    <div className="panel status-panel">
+                        <div className="panel-header">
+                            <h2>📍 System Status</h2>
+                        </div>
+                        <div className="status-grid">
+                            <div className="status-item">
+                                <span className="status-label">Mode</span>
+                                <span className={`status-value mode-${currentMode}`}>
+                                    {currentMode.toUpperCase()}
+                                </span>
+                            </div>
+                            <div className="status-item">
+                                <span className="status-label">LED</span>
+                                <span className={`status-value led-${status.led}`}>
+                                    {status.led === 'red' ? '🔴 Red' : '🟢 Green'}
+                                </span>
+                            </div>
+                            <div className="status-item">
+                                <span className="status-label">Door</span>
+                                <span className={`status-value door-${status.door}`}>
+                                    {status.door === 'locked' ? '🔒 Locked' : '🔓 Open'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Right Column - Alerts & History */}
+                <section className="history-panel">
+                    {/* Recent Alerts */}
+                    <div className="panel alerts-panel">
+                        <div className="panel-header">
+                            <h2>🚨 Recent Alerts</h2>
+                            <span className="alert-count">{alerts.length}</span>
+                        </div>
+                        <div className="alerts-list">
+                            {alerts.length === 0 ? (
+                                <div className="no-alerts">
+                                    <span>✅</span>
+                                    <p>No alerts</p>
+                                </div>
+                            ) : (
+                                alerts.map(alert => (
+                                    <div key={alert.id} className={`alert-item ${alert.type}`}>
+                                        <span className="alert-type-icon">
+                                            {alert.type === 'fire' ? '🔥' : '🚨'}
+                                        </span>
+                                        <div className="alert-details">
+                                            <span className="alert-type-text">{alert.type}</span>
+                                            <span className="alert-time">{alert.time}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Stats */}
+                    {stats && (
+                        <div className="panel stats-panel">
+                            <div className="panel-header">
+                                <h2>📈 24h Stats</h2>
+                            </div>
+                            <div className="stats-grid">
+                                <div className="stat-item">
+                                    <span className="stat-value">{stats.total_readings}</span>
+                                    <span className="stat-label">Readings</span>
+                                </div>
+                                <div className="stat-item">
+                                    <span className="stat-value">{stats.avg_temp}°</span>
+                                    <span className="stat-label">Avg Temp</span>
+                                </div>
+                                <div className="stat-item danger">
+                                    <span className="stat-value">{stats.total_alerts}</span>
+                                    <span className="stat-label">Alerts</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* History Table */}
+                    <div className="panel history-table-panel">
+                        <div className="panel-header">
+                            <h2>📜 History</h2>
+                        </div>
+                        <div className="history-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Temp</th>
+                                        <th>Hum</th>
+                                        <th>Occ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {history.slice(0, 8).map((row, i) => (
+                                        <tr key={i}>
+                                            <td>{new Date(row.timestamp).toLocaleTimeString()}</td>
+                                            <td>{row.temp?.toFixed(1)}°</td>
+                                            <td>{row.humidity?.toFixed(0)}%</td>
+                                            <td>{row.occupant_count || 0}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </main>
         </div>
     );
 }
