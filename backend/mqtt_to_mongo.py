@@ -210,6 +210,8 @@ def get_stats():
     return jsonify(stats)
 
 # ==================== MAIN ====================
+import ssl
+
 def run_mqtt():
     """Run MQTT client in background thread"""
     mqtt_client = mqtt.Client()
@@ -220,6 +222,12 @@ def run_mqtt():
     if MQTT_USERNAME and MQTT_PASSWORD:
         mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
         print(f"[MQTT] Using authentication as '{MQTT_USERNAME}'")
+    
+    # Configure TLS (use default CA or skip verification for self-signed)
+    if MQTT_PORT == 8883:
+        mqtt_client.tls_set(cert_reqs=ssl.CERT_NONE)
+        mqtt_client.tls_insecure_set(True)
+        print("[MQTT] TLS enabled (insecure mode for self-signed cert)")
     
     print(f"[MQTT] Connecting to {MQTT_BROKER}:{MQTT_PORT}...")
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)

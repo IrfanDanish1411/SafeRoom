@@ -15,6 +15,7 @@
  ******************************************************/
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <ESP32Servo.h>
@@ -42,12 +43,35 @@
 const char* WIFI_SSID = "cslab";
 const char* WIFI_PASSWORD = "aksesg31";
 
-// ==================== MQTT CONFIGURATION ====================
+// ==================== MQTT CONFIGURATION (TLS) ====================
 const char* MQTT_SERVER = "35.193.224.18";
-const int MQTT_PORT = 1883;
+const int MQTT_PORT = 8883;  // TLS port
 const char* MQTT_CLIENT_ID = "esp32_room_safety";
-const char* MQTT_USERNAME = "esp32";        // MQTT auth
-const char* MQTT_PASSWORD = "esp32_secret"; // MQTT auth
+const char* MQTT_USERNAME = "esp32";
+const char* MQTT_PASSWORD = "esp32_secret";
+
+// CA Certificate for TLS
+const char* CA_CERT = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIDDzCCAfegAwIBAgIUcSEhi8YdkT6TmWn/x5F4vDx+nIMwDQYJKoZIhvcNAQEL
+BQAwFzEVMBMGA1UEAwwMUm9vbUd1YXJkIENBMB4XDTI2MDExNjIyMDUyNVoXDTI3
+MDExNjIyMDUyNVowFzEVMBMGA1UEAwwMUm9vbUd1YXJkIENBMIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw99L29Ws3Wa1q8VsY0iVUlAUHUEdLOw/yWqU
+SVlxEN4rl8FALZFy+fQout99gmDYIZ8MSb3FXKlG5rwhm+Hp5t7XOWdC7bFY8l0p
+idTAooMGjYBESdHOnGNUXKahmd83pFk7uL2f/KANRbVamLdF5cVOTyWPsGbhLLqQ
+Uuf+CjaLaaKKX2K243GJv011bS0E8lHwSLrAPTNRYLSsJ5ZOwFKDcYg7aAGxbcRy
+L+I06VDT6+eUbll8C6ZCbGzzD3lFaHdmgIjQd2M+ZOhCTdXYu70tOFQ3MXylQzGh
+nCVSokMM7pSTf0bSf2fG13fSx/tLW4a/1SQGo4EieqNTZ2FcwQIDAQABo1MwUTAd
+BgNVHQ4EFgQURP5nKDRfk2eDWobo+A+9wlEZ9howHwYDVR0jBBgwFoAURP5nKDRf
+k2eDWobo+A+9wlEZ9howDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOC
+AQEAOCX7cyWcP7eACcXVuTBb3DDAu+7m6EWom4jiyfD17iZCraBYryxRFkDOl0EP
+ULyk9yfEVr5J0x9lbNocpmNJCFRMgo3dT+ismTvA7CDK5b3gFIp/E78y45RZ0vpq
+Y49nVO1oyHYDmVhFDGtCI30ox58pWZJ92KjKUWS7nNtmTzP9AtMHOCXJUiejdvHL
+BqzADxO8F5CacIAIK3waqFASgx0Pp3Tf4egHTR7QNeXu1ChWfqX0ob8iuP/ktBMA
+d2VJIqNM8VgOeUy4iuNdru8Br7h4M80Ok2EwPDxqGjF1tOYNG6fWIVaBvJJq46J5
+UyC3s8ukR5qvSyqzb8pnHOO2iA==
+-----END CERTIFICATE-----
+)EOF";
 
 // MQTT Topics
 const char* TOPIC_SENSORS = "room/sensors";
@@ -56,7 +80,7 @@ const char* TOPIC_ALERT = "room/alert";
 const char* TOPIC_COMMAND = "room/command";
 
 // ==================== OBJECTS ====================
-WiFiClient wifiClient;
+WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
 DHT dht(DHT_PIN, DHT_TYPE);
 Servo doorServo;
@@ -168,8 +192,14 @@ void setupWiFi() {
 
 // ==================== MQTT SETUP ====================
 void setupMQTT() {
+  // Configure TLS with CA certificate
+  wifiClient.setCACert(CA_CERT);
+  // Skip hostname verification (cert is for IP, not domain)
+  wifiClient.setInsecure();
+  
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
+  Serial.println("[MQTT] TLS configured with CA certificate");
 }
 
 void reconnectMQTT() {
