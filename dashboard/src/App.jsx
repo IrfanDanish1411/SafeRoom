@@ -4,7 +4,7 @@ import HistoryPanel from './components/HistoryPanel';
 
 // ==================== MQTT CONFIGURATION ====================
 // TODO: Update with your GCP VM's external IP address
-const MQTT_BROKER_URL = 'ws://YOUR_GCP_VM_IP:9001/mqtt';
+const MQTT_BROKER_URL = 'ws://35.193.224.18:9001/mqtt';
 
 // MQTT Topics
 const TOPICS = {

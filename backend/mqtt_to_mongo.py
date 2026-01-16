@@ -86,7 +86,15 @@ def on_message(client, userdata, msg):
 
 # ==================== FLASK API ====================
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React dashboard
+
+# Enable CORS for all origins (allow React dashboard from any host)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 @app.route('/api/health', methods=['GET'])
 def health_check():

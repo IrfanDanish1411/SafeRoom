@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 // API base URL - update with your backend server
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://35.193.224.18:5000/api';
 
 /**
  * Hook to fetch sensor history from MongoDB via REST API
