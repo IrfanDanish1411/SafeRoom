@@ -3,7 +3,9 @@ import mqtt from 'mqtt';
 import './index.css';
 
 // ==================== CONFIGURATION ====================
-const MQTT_BROKER_URL = 'wss://35.193.224.18:8884/mqtt';  // TLS WebSocket
+// Note: Using non-TLS WebSocket for dashboard (browser cert issues with self-signed)
+// ESP32 and backend still use TLS on port 8883
+const MQTT_BROKER_URL = 'ws://35.193.224.18:9001/mqtt';
 const API_BASE = 'http://35.193.224.18:5000/api';
 
 // Role-Based Access - PINs
