@@ -1,10 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import mqtt from 'mqtt';
 import './index.css';
 
 // ==================== CONFIGURATION ====================
 const MQTT_BROKER_URL = 'ws://35.193.224.18:9001/mqtt';
 const API_BASE = 'http://35.193.224.18:5000/api';
+
+// Simple auth credentials (in production, use proper backend auth)
+const AUTH_PIN = '1411';
 
 const TOPICS = {
     SENSORS: 'room/sensors',
@@ -13,7 +16,57 @@ const TOPICS = {
     COMMAND: 'room/command',
 };
 
-function App() {
+// ==================== LOGIN COMPONENT ====================
+function LoginPage({ onLogin }) {
+    const [pin, setPin] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        // Simulate auth check
+        setTimeout(() => {
+            if (pin === AUTH_PIN) {
+                localStorage.setItem('room_safety_auth', 'true');
+                onLogin();
+            } else {
+                setError('Invalid PIN');
+                setLoading(false);
+            }
+        }, 500);
+    };
+
+    return (
+        <div className="login-page">
+            <div className="login-card">
+                <div className="login-icon">🔐</div>
+                <h1>RoomGuard</h1>
+                <p>Enter PIN to access dashboard</p>
+                <form onSubmit={handleSubmit}>
+                    <input
+                        type="password"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value)}
+                        placeholder="Enter PIN"
+                        maxLength={6}
+                        autoFocus
+                    />
+                    {error && <div className="login-error">{error}</div>}
+                    <button type="submit" disabled={loading || pin.length < 4}>
+                        {loading ? 'Verifying...' : 'Access Dashboard'}
+                    </button>
+                </form>
+                <p className="login-hint">ASK OWNER FOR PIN</p>
+            </div>
+        </div>
+    );
+}
+
+// ==================== MAIN APP COMPONENT ====================
+function Dashboard() {
     // Connection state
     const [connected, setConnected] = useState(false);
     const [client, setClient] = useState(null);
@@ -42,13 +95,77 @@ function App() {
     const [history, setHistory] = useState([]);
     const [stats, setStats] = useState(null);
 
+    // Button loading states
+    const [loadingBtn, setLoadingBtn] = useState(null);
+
+    // Audio ref for alerts
+    const alarmRef = useRef(null);
+    const lastAlertMode = useRef('normal');
+
+    // Request browser notification permission
+    useEffect(() => {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }, []);
+
+    // Play sound and show notification on alerts
+    useEffect(() => {
+        const currentMode = status.mode || 'normal';
+
+        // Only trigger on mode CHANGE to alert
+        if (currentMode !== 'normal' && lastAlertMode.current === 'normal') {
+            // Play alarm sound
+            if (alarmRef.current) {
+                alarmRef.current.currentTime = 0;
+                alarmRef.current.play().catch(() => { });
+            }
+
+            // Browser notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+                const title = currentMode === 'fire' ? '🔥 FIRE ALERT!' : '🚨 BURGLAR ALERT!';
+                const body = currentMode === 'fire'
+                    ? 'High temperature detected! Door unlocked for evacuation.'
+                    : 'Motion detected with no authorized entry!';
+
+                new Notification(title, {
+                    body,
+                    icon: currentMode === 'fire' ? '🔥' : '🚨',
+                    requireInteraction: true,
+                });
+            }
+        }
+
+        lastAlertMode.current = currentMode;
+    }, [status.mode]);
+
     // Connect to MQTT
     useEffect(() => {
-        const mqttClient = mqtt.connect(MQTT_BROKER_URL);
+        // Robust connection options
+        const options = {
+            keepalive: 60,
+            reconnectPeriod: 5000, // Reconnect every 5 seconds
+            connectTimeout: 30 * 1000,
+            clean: true,
+            clientId: 'dashboard_' + Math.random().toString(16).substr(2, 8)
+        };
+
+        const mqttClient = mqtt.connect(MQTT_BROKER_URL, options);
 
         mqttClient.on('connect', () => {
+            console.log('MQTT Connected');
             setConnected(true);
-            mqttClient.subscribe(Object.values(TOPICS).slice(0, 3));
+            mqttClient.subscribe(Object.values(TOPICS).slice(0, 3), { qos: 1 });
+        });
+
+        mqttClient.on('reconnect', () => {
+            console.log('MQTT Reconnecting...');
+            setConnected(false);
+        });
+
+        mqttClient.on('offline', () => {
+            console.log('MQTT Offline');
+            setConnected(false);
         });
 
         mqttClient.on('message', (topic, message) => {
@@ -97,12 +214,22 @@ function App() {
         return () => clearInterval(interval);
     }, []);
 
-    // Send command
+    // Send command with loading state
     const sendCommand = useCallback((action) => {
         if (client && connected) {
+            setLoadingBtn(action);
             client.publish(TOPICS.COMMAND, JSON.stringify({ action }));
+
+            // Reset loading after delay
+            setTimeout(() => setLoadingBtn(null), 1000);
         }
     }, [client, connected]);
+
+    // Logout
+    const handleLogout = () => {
+        localStorage.removeItem('room_safety_auth');
+        window.location.reload();
+    };
 
     // Determine current mode
     const currentMode = status.mode || 'normal';
@@ -111,13 +238,23 @@ function App() {
 
     return (
         <div className={`app ${isAlert ? 'alert-mode' : ''}`}>
+            {/* Hidden audio element for alarm */}
+            <audio ref={alarmRef} preload="auto">
+                <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg" />
+            </audio>
+
             {/* Header */}
             <header className="header">
                 <div className="header-content">
-                    <h1>🏠 Room Safety Monitor</h1>
-                    <div className={`connection-badge ${connected ? 'online' : 'offline'}`}>
-                        <span className="pulse-dot"></span>
-                        {connected ? 'Live' : 'Disconnected'}
+                    <h1>🏠 RoomGuard</h1>
+                    <div className="header-right">
+                        <div className={`connection-badge ${connected ? 'online' : 'offline'}`}>
+                            <span className="pulse-dot"></span>
+                            {connected ? 'Live' : 'Disconnected'}
+                        </div>
+                        <button className="logout-btn" onClick={handleLogout}>
+                            🚪 Logout
+                        </button>
                     </div>
                 </div>
             </header>
@@ -131,8 +268,12 @@ function App() {
                             ? 'FIRE DETECTED - Door unlocked for evacuation!'
                             : 'BURGLAR DETECTED - Door locked!'}
                     </span>
-                    <button className="alert-dismiss" onClick={() => sendCommand('reset')}>
-                        Reset Alert
+                    <button
+                        className="alert-dismiss"
+                        onClick={() => sendCommand('reset')}
+                        disabled={loadingBtn === 'reset'}
+                    >
+                        {loadingBtn === 'reset' ? '...' : 'Reset Alert'}
                     </button>
                 </div>
             )}
@@ -155,26 +296,26 @@ function App() {
                         </div>
                         <div className="door-actions">
                             <button
-                                className="btn btn-lock"
+                                className={`btn btn-lock ${loadingBtn === 'lock' ? 'loading' : ''}`}
                                 onClick={() => sendCommand('lock')}
-                                disabled={!connected}
+                                disabled={!connected || loadingBtn}
                             >
-                                🔒 Lock
+                                {loadingBtn === 'lock' ? '⏳' : '🔒'} Lock
                             </button>
                             <button
-                                className="btn btn-unlock"
+                                className={`btn btn-unlock ${loadingBtn === 'unlock' ? 'loading' : ''}`}
                                 onClick={() => sendCommand('unlock')}
-                                disabled={!connected}
+                                disabled={!connected || loadingBtn}
                             >
-                                🔓 Unlock
+                                {loadingBtn === 'unlock' ? '⏳' : '🔓'} Unlock
                             </button>
                         </div>
                         <button
-                            className="btn btn-reset full-width"
+                            className={`btn btn-reset full-width ${loadingBtn === 'reset' ? 'loading' : ''}`}
                             onClick={() => sendCommand('reset')}
-                            disabled={!connected}
+                            disabled={!connected || loadingBtn}
                         >
-                            🔄 Reset System
+                            {loadingBtn === 'reset' ? '⏳ Resetting...' : '🔄 Reset System'}
                         </button>
                     </div>
 
@@ -190,11 +331,11 @@ function App() {
                             </span>
                         </div>
                         <button
-                            className="btn btn-checkout full-width"
+                            className={`btn btn-checkout full-width ${loadingBtn === 'checkout' ? 'loading' : ''}`}
                             onClick={() => sendCommand('checkout')}
-                            disabled={!connected || occupants === 0}
+                            disabled={!connected || occupants === 0 || loadingBtn}
                         >
-                            🚪 Checkout (-1)
+                            {loadingBtn === 'checkout' ? '⏳' : '🚪'} Checkout (-1)
                         </button>
                     </div>
                 </section>
@@ -366,6 +507,19 @@ function App() {
             </main>
         </div>
     );
+}
+
+// ==================== APP WRAPPER ====================
+function App() {
+    const [isAuthenticated, setIsAuthenticated] = useState(
+        localStorage.getItem('room_safety_auth') === 'true'
+    );
+
+    if (!isAuthenticated) {
+        return <LoginPage onLogin={() => setIsAuthenticated(true)} />;
+    }
+
+    return <Dashboard />;
 }
 
 export default App;

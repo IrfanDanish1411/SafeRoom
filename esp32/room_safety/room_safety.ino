@@ -70,6 +70,7 @@ unsigned long lastSensorRead = 0;
 unsigned long lastMqttPublish = 0;
 const unsigned long SENSOR_INTERVAL = 2000;    // Read sensors every 2 seconds
 const unsigned long MQTT_INTERVAL = 5000;      // Publish to MQTT every 5 seconds
+int consecutiveMotionCount = 0;                // Filter for PIR sensitivity
 
 // ==================== FUNCTION DECLARATIONS ====================
 void setupWiFi();
@@ -311,16 +312,25 @@ void checkSafetyLogic(float temperature) {
 
   // BURGLAR DETECTION - Only if no fire
   if (!fireDetected) {
-    // PIR detects motion but room is EMPTY (no occupants) = BURGLAR!
+    // Check if motion detected in empty room
     if (pirState == HIGH && occupantCount == 0 && !burglarDetected) {
-      burglarDetected = true;
-      Serial.println("\n🚨🚨🚨 BURGLAR DETECTED! 🚨🚨🚨");
-      Serial.println("Motion detected in unoccupied room!\n");
+      consecutiveMotionCount++;
+      Serial.printf("[PIR] Motion detected! Check %d/2\n", consecutiveMotionCount);
       
-      lockDoor();   // Lock the intruder in
-      setLEDs(true); // Red LED on
-      publishAlert("burglar", "Motion detected with no authorized entry! Door locked.");
-      publishStatus();
+      // REQUIRE 2 consecutive reads (approx 4 seconds) to confirm burglar
+      if (consecutiveMotionCount >= 2) {
+        burglarDetected = true;
+        Serial.println("\n🚨🚨🚨 BURGLAR DETECTED! 🚨🚨🚨");
+        Serial.println("Motion CONFIRMED in unoccupied room!\n");
+        
+        lockDoor();   // Lock the intruder in
+        setLEDs(true); // Red LED on
+        publishAlert("burglar", "Motion confirmed with no authorized entry! Door locked.");
+        publishStatus();
+      }
+    } else {
+      // Reset counter if motion stops
+      consecutiveMotionCount = 0;
     }
   }
 

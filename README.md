@@ -1,6 +1,6 @@
 # Room Safety Checker - IoT Project
 
-A smart room safety monitoring system using ESP32 with multiple sensors for **burglar detection** and **fire safety**, with real-time monitoring via a web dashboard.
+A smart room safety monitoring system using ESP32 with multiple sensors for **burglar detection** and **fire safety**, with real-time monitoring via a modern React web dashboard.
 
 ## 🏗️ System Architecture
 
@@ -12,32 +12,42 @@ A smart room safety monitoring system using ESP32 with multiple sensors for **bu
 └─────────────────┘              └─────────────────┘              └─────────────────┘
 ```
 
+## ✨ New Features
+
+- **🛡️ Secure Dashboard**: User authentication with PIN login (Default: `1234`).
+- **🎨 Modern UI**: Redesigned with dark glassmorphism theme and security aesthetics.
+- **🔊 Sound Alerts**: Auto-play siren sound when Burglar or Fire alert is triggered.
+- **🔔 Browser Notifications**: Real-time push notifications for critical alerts.
+- **⏳ Interactive Feedback**: Loading states for buttons to confirm actions.
+- **📈 History Tracking**: MongoDB backend stores sensor data for 24h history graphs.
+
 ## 📦 Components
 
 ### Hardware
 | Component | GPIO | Purpose |
 |-----------|------|---------|
-| DHT11 | 18 | Temperature & humidity sensor |
-| IR Sensor | 17 | Entry detection (beam break) |
+| DHT11 | 27 | Temperature & humidity sensor |
+| IR Sensor | 14 | Entry detection (beam break) |
 | PIR Sensor | 4 | Motion detection |
-| Servo Motor | 15 | Door lock mechanism |
+| Servo (SG90) | 15 | Door lock mechanism (0°=Lock, 90°=Unlock) |
 | Red LED | 22 | Alert indicator |
 | Green LED | 23 | Safe indicator |
 
 ### Software
 - **ESP32 Firmware**: Arduino C++ with WiFi & MQTT
 - **MQTT Broker**: Mosquitto on GCP VM
-- **Dashboard**: ReactJS with mqtt.js
+- **Dashboard**: ReactJS with mqtt.js, Chart.js, and HTML5 Audio
+- **Backend**: Python + MongoDB for data storage
 
 ## 🔒 Safety Logic
 
 1. **Burglar Detection**
    - PIR detects motion AND entry count = 0
-   - → Door locks automatically + Red LED + Alert
+   - → Door locks automatically (0°) + Red LED + Alert + Siren
 
 2. **Fire Detection**
    - Temperature > 50°C
-   - → Door unlocks for evacuation + Red LED + Alert
+   - → Door unlocks for evacuation (90°) + Red LED + Alert + Siren
 
 ## 🚀 Quick Start
 
@@ -66,7 +76,7 @@ sudo systemctl restart mosquitto
 
 **GCP Firewall**: Allow TCP ports `1883` and `9001`
 
-### 3. Dashboard
+### 3. Dashboard Setup
 
 ```bash
 cd dashboard
@@ -74,39 +84,10 @@ npm install
 npm run dev
 ```
 
-Update `MQTT_BROKER_URL` in `src/App.jsx` with your GCP VM IP.
+- Update `MQTT_BROKER_URL` in `src/App.jsx` with your GCP VM IP.
+- Default Login PIN: `1234`
 
-## 📡 MQTT Topics
-
-| Topic | Direction | Description |
-|-------|-----------|-------------|
-| `room/sensors` | ESP32 → Dashboard | Sensor readings |
-| `room/status` | ESP32 → Dashboard | Door/LED/mode status |
-| `room/alert` | ESP32 → Dashboard | Security alerts |
-| `room/command` | Dashboard → ESP32 | Control commands |
-
----
-
-## 🗄️ MongoDB + Backend Setup
-
-### 4. Install MongoDB (on GCP VM)
-
-```bash
-# Import MongoDB public key
-curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
-
-# Add MongoDB repo
-echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] http://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-
-# Install MongoDB
-sudo apt update && sudo apt install -y mongodb-org
-
-# Start MongoDB
-sudo systemctl enable mongod
-sudo systemctl start mongod
-```
-
-### 5. Run Backend Service
+### 4. MongoDB + Backend Setup
 
 ```bash
 cd backend
@@ -121,7 +102,7 @@ pip install -r requirements.txt
 
 # Copy and edit environment file
 cp .env.example .env
-nano .env  # Update MQTT_BROKER with your GCP VM IP
+# Edit .env: Update MQTT_BROKER with your GCP VM IP
 
 # Run the service
 python mqtt_to_mongo.py
@@ -129,12 +110,14 @@ python mqtt_to_mongo.py
 
 **GCP Firewall**: Allow TCP port `5000` for REST API
 
-### 6. Dashboard Configuration
+## 📡 MQTT Topics
 
-Update `src/hooks/useHistory.js`:
-```javascript
-const API_BASE = 'http://YOUR_GCP_VM_IP:5000/api';
-```
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `room/sensors` | ESP32 → Dashboard | Sensor readings |
+| `room/status` | ESP32 → Dashboard | Door/LED/mode status |
+| `room/alert` | ESP32 → Dashboard | Security alerts |
+| `room/command` | Dashboard → ESP32 | Control commands |
 
 ## 📊 REST API Endpoints
 
@@ -143,7 +126,6 @@ const API_BASE = 'http://YOUR_GCP_VM_IP:5000/api';
 | `GET /api/sensors?hours=24` | Sensor readings |
 | `GET /api/alerts?hours=24` | Alert history |
 | `GET /api/stats?hours=24` | Statistics |
-| `GET /api/status` | Latest status |
 
 ## 📝 License
 
