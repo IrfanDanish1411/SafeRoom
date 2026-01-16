@@ -234,7 +234,7 @@ function Dashboard({ userRole = 'viewer' }) {
 
     // Logout
     const handleLogout = () => {
-        localStorage.removeItem('room_safety_auth');
+        localStorage.removeItem('roomguard_user');
         window.location.reload();
     };
 
