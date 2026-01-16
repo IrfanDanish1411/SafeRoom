@@ -24,8 +24,10 @@ load_dotenv()
 # ==================== CONFIGURATION ====================
 MQTT_BROKER = os.getenv('MQTT_BROKER', 'localhost')
 MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
+MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
+MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
-MONGO_DB = os.getenv('MONGO_DB', 'room_safety')
+MONGO_DB = os.getenv('MONGO_DB', 'roomguard')
 API_PORT = int(os.getenv('API_PORT', 5000))
 
 # MQTT Topics
@@ -213,6 +215,11 @@ def run_mqtt():
     mqtt_client = mqtt.Client()
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
+    
+    # Set credentials if configured
+    if MQTT_USERNAME and MQTT_PASSWORD:
+        mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+        print(f"[MQTT] Using authentication as '{MQTT_USERNAME}'")
     
     print(f"[MQTT] Connecting to {MQTT_BROKER}:{MQTT_PORT}...")
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)

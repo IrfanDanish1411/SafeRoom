@@ -46,6 +46,8 @@ const char* WIFI_PASSWORD = "aksesg31";
 const char* MQTT_SERVER = "35.193.224.18";
 const int MQTT_PORT = 1883;
 const char* MQTT_CLIENT_ID = "esp32_room_safety";
+const char* MQTT_USERNAME = "esp32";        // MQTT auth
+const char* MQTT_PASSWORD = "esp32_secret"; // MQTT auth
 
 // MQTT Topics
 const char* TOPIC_SENSORS = "room/sensors";
@@ -176,7 +178,8 @@ void reconnectMQTT() {
   while (!mqttClient.connected()) {
     Serial.print("[MQTT] Attempting connection...");
     
-    if (mqttClient.connect(MQTT_CLIENT_ID)) {
+    // Connect with username and password
+    if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
       Serial.println(" connected!");
       
       // Subscribe to command topic

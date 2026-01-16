@@ -6,8 +6,11 @@ import './index.css';
 const MQTT_BROKER_URL = 'ws://35.193.224.18:9001/mqtt';
 const API_BASE = 'http://35.193.224.18:5000/api';
 
-// Simple auth credentials (in production, use proper backend auth)
-const AUTH_PIN = '1411';
+// Role-Based Access - PINs
+const USERS = {
+    '1411': { role: 'admin', name: 'Admin' },
+    '0000': { role: 'viewer', name: 'Viewer' }
+};
 
 const TOPICS = {
     SENSORS: 'room/sensors',
@@ -27,11 +30,11 @@ function LoginPage({ onLogin }) {
         setLoading(true);
         setError('');
 
-        // Simulate auth check
         setTimeout(() => {
-            if (pin === AUTH_PIN) {
-                localStorage.setItem('room_safety_auth', 'true');
-                onLogin();
+            const user = USERS[pin];
+            if (user) {
+                localStorage.setItem('roomguard_user', JSON.stringify(user));
+                onLogin(user);
             } else {
                 setError('Invalid PIN');
                 setLoading(false);
@@ -59,14 +62,16 @@ function LoginPage({ onLogin }) {
                         {loading ? 'Verifying...' : 'Access Dashboard'}
                     </button>
                 </form>
-                <p className="login-hint">ASK OWNER FOR PIN</p>
+                <p className="login-hint">Admin: Full Control | Viewer: Monitor Only</p>
             </div>
         </div>
     );
 }
 
 // ==================== MAIN APP COMPONENT ====================
-function Dashboard() {
+function Dashboard({ userRole = 'viewer' }) {
+    const isAdmin = userRole === 'admin';
+
     // Connection state
     const [connected, setConnected] = useState(false);
     const [client, setClient] = useState(null);
@@ -141,13 +146,15 @@ function Dashboard() {
 
     // Connect to MQTT
     useEffect(() => {
-        // Robust connection options
+        // Robust connection options with authentication
         const options = {
             keepalive: 60,
-            reconnectPeriod: 5000, // Reconnect every 5 seconds
+            reconnectPeriod: 5000,
             connectTimeout: 30 * 1000,
             clean: true,
-            clientId: 'dashboard_' + Math.random().toString(16).substr(2, 8)
+            clientId: 'dashboard_' + Math.random().toString(16).substr(2, 8),
+            username: 'dashboard',         // MQTT auth
+            password: 'dashboard_secret'   // MQTT auth
         };
 
         const mqttClient = mqtt.connect(MQTT_BROKER_URL, options);
@@ -248,6 +255,9 @@ function Dashboard() {
                 <div className="header-content">
                     <h1>🏠 RoomGuard</h1>
                     <div className="header-right">
+                        <span className={`role-badge ${userRole}`}>
+                            {userRole === 'admin' ? '👑 Admin' : '👁️ Viewer'}
+                        </span>
                         <div className={`connection-badge ${connected ? 'online' : 'offline'}`}>
                             <span className="pulse-dot"></span>
                             {connected ? 'Live' : 'Disconnected'}
@@ -298,14 +308,16 @@ function Dashboard() {
                             <button
                                 className={`btn btn-lock ${loadingBtn === 'lock' ? 'loading' : ''}`}
                                 onClick={() => sendCommand('lock')}
-                                disabled={!connected || loadingBtn}
+                                disabled={!connected || loadingBtn || !isAdmin}
+                                title={!isAdmin ? 'Admin only' : ''}
                             >
                                 {loadingBtn === 'lock' ? '⏳' : '🔒'} Lock
                             </button>
                             <button
                                 className={`btn btn-unlock ${loadingBtn === 'unlock' ? 'loading' : ''}`}
                                 onClick={() => sendCommand('unlock')}
-                                disabled={!connected || loadingBtn}
+                                disabled={!connected || loadingBtn || !isAdmin}
+                                title={!isAdmin ? 'Admin only' : ''}
                             >
                                 {loadingBtn === 'unlock' ? '⏳' : '🔓'} Unlock
                             </button>
@@ -313,7 +325,8 @@ function Dashboard() {
                         <button
                             className={`btn btn-reset full-width ${loadingBtn === 'reset' ? 'loading' : ''}`}
                             onClick={() => sendCommand('reset')}
-                            disabled={!connected || loadingBtn}
+                            disabled={!connected || loadingBtn || !isAdmin}
+                            title={!isAdmin ? 'Admin only' : ''}
                         >
                             {loadingBtn === 'reset' ? '⏳ Resetting...' : '🔄 Reset System'}
                         </button>
@@ -333,7 +346,8 @@ function Dashboard() {
                         <button
                             className={`btn btn-checkout full-width ${loadingBtn === 'checkout' ? 'loading' : ''}`}
                             onClick={() => sendCommand('checkout')}
-                            disabled={!connected || occupants === 0 || loadingBtn}
+                            disabled={!connected || occupants === 0 || loadingBtn || !isAdmin}
+                            title={!isAdmin ? 'Admin only' : ''}
                         >
                             {loadingBtn === 'checkout' ? '⏳' : '🚪'} Checkout (-1)
                         </button>
@@ -511,15 +525,21 @@ function Dashboard() {
 
 // ==================== APP WRAPPER ====================
 function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(
-        localStorage.getItem('room_safety_auth') === 'true'
-    );
+    const [user, setUser] = useState(() => {
+        const saved = localStorage.getItem('roomguard_user');
+        return saved ? JSON.parse(saved) : null;
+    });
 
-    if (!isAuthenticated) {
-        return <LoginPage onLogin={() => setIsAuthenticated(true)} />;
+    const handleLogout = () => {
+        localStorage.removeItem('roomguard_user');
+        setUser(null);
+    };
+
+    if (!user) {
+        return <LoginPage onLogin={(userData) => setUser(userData)} />;
     }
 
-    return <Dashboard />;
+    return <Dashboard userRole={user.role} />;
 }
 
 export default App;
