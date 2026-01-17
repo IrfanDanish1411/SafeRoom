@@ -1,0 +1,29 @@
+# Environment variables (contains secrets)
+.env
+*.env.local
+
+# ESP32 credentials (contains WiFi/MQTT passwords and CA cert)
+esp32/room_safety/credentials.h
+esp32/room_safety/room_safety.ino
+
+# Node modules
+node_modules/
+dashboard/node_modules/
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Build outputs
+dashboard/dist/
+*.o
+*.bin
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
