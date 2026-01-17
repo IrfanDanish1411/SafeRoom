@@ -4,7 +4,6 @@
 
 # ESP32 credentials (contains WiFi/MQTT passwords and CA cert)
 esp32/room_safety/credentials.h
-esp32/room_safety/room_safety.ino
 
 # Node modules
 node_modules/

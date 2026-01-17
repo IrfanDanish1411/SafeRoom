@@ -19,7 +19,7 @@
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <ESP32Servo.h>
-#include <ArduinoJson.h>
+#include <ArduinoJson.h>    
 
 // ==================== PIN DEFINITIONS ====================
 #define DHT_PIN         27
@@ -40,36 +40,21 @@
 #define SERVO_MOVE_TIME 500   // Time to wait for movement (ms)
 
 // ==================== WIFI CONFIGURATION ====================
-const char* WIFI_SSID = "cslab";
-const char* WIFI_PASSWORD = "aksesg31";
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // ==================== MQTT CONFIGURATION (TLS) ====================
-const char* MQTT_SERVER = "35.193.224.18";
+const char* MQTT_SERVER = "YOUR_GCP_EXTERNAL_IP";
 const int MQTT_PORT = 8883;  // TLS port
 const char* MQTT_CLIENT_ID = "esp32_room_safety";
-const char* MQTT_USERNAME = "esp32";
-const char* MQTT_PASSWORD = "esp32_secret";
+const char* MQTT_USERNAME = "YOUR_MQTT_USERNAME";
+const char* MQTT_PASSWORD = "YOUR_MQTT_PASSWORD";
 
 // CA Certificate for TLS
+// Copy from: /etc/mosquitto/certs/ca.crt on your GCP VM
 const char* CA_CERT = R"EOF(
 -----BEGIN CERTIFICATE-----
-MIIDDzCCAfegAwIBAgIUcSEhi8YdkT6TmWn/x5F4vDx+nIMwDQYJKoZIhvcNAQEL
-BQAwFzEVMBMGA1UEAwwMUm9vbUd1YXJkIENBMB4XDTI2MDExNjIyMDUyNVoXDTI3
-MDExNjIyMDUyNVowFzEVMBMGA1UEAwwMUm9vbUd1YXJkIENBMIIBIjANBgkqhkiG
-9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw99L29Ws3Wa1q8VsY0iVUlAUHUEdLOw/yWqU
-SVlxEN4rl8FALZFy+fQout99gmDYIZ8MSb3FXKlG5rwhm+Hp5t7XOWdC7bFY8l0p
-idTAooMGjYBESdHOnGNUXKahmd83pFk7uL2f/KANRbVamLdF5cVOTyWPsGbhLLqQ
-Uuf+CjaLaaKKX2K243GJv011bS0E8lHwSLrAPTNRYLSsJ5ZOwFKDcYg7aAGxbcRy
-L+I06VDT6+eUbll8C6ZCbGzzD3lFaHdmgIjQd2M+ZOhCTdXYu70tOFQ3MXylQzGh
-nCVSokMM7pSTf0bSf2fG13fSx/tLW4a/1SQGo4EieqNTZ2FcwQIDAQABo1MwUTAd
-BgNVHQ4EFgQURP5nKDRfk2eDWobo+A+9wlEZ9howHwYDVR0jBBgwFoAURP5nKDRf
-k2eDWobo+A+9wlEZ9howDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOC
-AQEAOCX7cyWcP7eACcXVuTBb3DDAu+7m6EWom4jiyfD17iZCraBYryxRFkDOl0EP
-ULyk9yfEVr5J0x9lbNocpmNJCFRMgo3dT+ismTvA7CDK5b3gFIp/E78y45RZ0vpq
-Y49nVO1oyHYDmVhFDGtCI30ox58pWZJ92KjKUWS7nNtmTzP9AtMHOCXJUiejdvHL
-BqzADxO8F5CacIAIK3waqFASgx0Pp3Tf4egHTR7QNeXu1ChWfqX0ob8iuP/ktBMA
-d2VJIqNM8VgOeUy4iuNdru8Br7h4M80Ok2EwPDxqGjF1tOYNG6fWIVaBvJJq46J5
-UyC3s8ukR5qvSyqzb8pnHOO2iA==
+YOUR_CA_CERTIFICATE_CONTENT_HERE
 -----END CERTIFICATE-----
 )EOF";
 
